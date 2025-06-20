@@ -1,28 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-'''
- ------------------------------------------------------------------
- @File Name:        main.py
- @Created:          2022/7/18 10:56
- @Software:         PyCharm
- 
- @Author:           HHH
- @Email:            1950049@tongji.edu.cn
- @Gitee:            https://gitee.com/jin-yiyang
- @Version:          v1.0
- 
- @Description:      Main Function:    
-                    
- @Function List:    exit() -- exit the interpreter by raising SystemExit
-                    getdlopenflags() -- returns flags to be used for dlopen() calls
-                    getprofile() -- get the global profiling function
- ------------------------------------------------------------------
- @Change History :                                                          
-  <Date>     | <Version> | <Author>       | <Description>                   
- ------------------------------------------------------------------
-  2022/7/18   | v1.0      | HHH            | Create file                     
- ------------------------------------------------------------------
-'''
+# —*- coding:utf-8 -*- 
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -40,6 +17,8 @@ from algo.TD3.TD3_mlp import TD3_MLP
 from algo.TD3.TD3_cnn import TD3_CNN
 from algo.DDPG.DDPG_mlp import DDPG_MLP
 from algo.DARC.DARC_mlp import DARC_MLP
+from algo.DiffusionPolicy.diffusion_mlp import DiffusionPolicy_MLP
+from algo.DiffusionPolicy.diffusion_cnn import DiffusionPolicy_CNN
 import json
 import pandas as pd
 
@@ -584,6 +563,176 @@ def train_pick_with_TD3(**kwargs):
                 pbar.update(1)
 
 
+def train_reach_with_DiffusionPolicy(**kwargs):
+    # 根据命令行参数更新配置
+    opt._parse(kwargs)
+
+    vis = Visualizer(opt.vis_name, port=opt.vis_port)
+    env = RLReachEnv(is_render=True, is_good_view=False)
+    state_dim = 6
+    action_dim = 3
+    action_bound = float(env.action_space.high[0]) + 0.3
+
+    random.seed(opt.random_seed)
+    np.random.seed(opt.random_seed)
+    torch.manual_seed(opt.random_seed)
+    
+    # 使用DiffusionPolicy专用的参数
+    replay_buffer = ReplayBuffer_Trajectory_reach(opt.buffer_size)
+    agent = DiffusionPolicy_MLP(
+        state_dim=state_dim, 
+        action_dim=action_dim, 
+        action_bound=action_bound,
+        hidden_dim=opt.hidden_dim,
+        actor_lr=opt.diffusion_lr,
+        num_diffusion_steps=opt.num_diffusion_steps,
+        num_inference_steps=opt.num_inference_steps, 
+        beta_schedule=opt.beta_schedule,
+        prediction_type=opt.prediction_type,
+        ema_decay=opt.ema_decay,
+        clip_sample=opt.clip_sample,
+        network_type=opt.network_type,
+        horizon_steps=opt.horizon_steps,
+        action_horizon=opt.action_horizon,
+        device=opt.device
+    )
+
+    return_list = []
+    max_rate = 0
+    for i in range(100):
+        with tqdm(total=int(opt.num_episodes / 10), desc='Iteration %d' % i) as pbar:
+            rate = 0.0
+            for i_episode in range(int(opt.num_episodes / 10)):
+                episode_return = 0
+                state = env.reset()
+                traj = Trajectory(state)
+                done = False
+                while not done:
+                    # DiffusionPolicy 不需要额外的探索噪声，因为扩散过程本身就包含随机性
+                    action = agent.take_action(state)
+                    state, reward, done, is_success = env.step(action)
+                    if is_success == True:
+                        rate = rate + 1
+                    episode_return += reward
+                    traj.store_step(action, state, reward, done)
+                replay_buffer.add_trajectory(traj)
+                vis.plot("return", episode_return)
+                return_list.append(episode_return)
+                
+                if replay_buffer.size() >= opt.minimal_episodes:
+                    for _ in range(opt.n_train):
+                        transition_dict = replay_buffer.sample(opt.batch_size, use_her=True, her_ratio=opt.her_ratio)
+                        loss = agent.train(transition_dict)
+                        vis.plot("diffusion_loss", loss)
+                        
+                if (i_episode + 1) % 10 == 0:
+                    pbar.set_postfix({
+                        'episode':
+                            '%d' % (opt.num_episodes / 10 * i + i_episode + 1),
+                        'return':
+                            '%.3f' % np.mean(return_list[-10:])
+                    })
+                    vis.plot("avg_return", np.mean(return_list[-10:]))
+                    
+                if (i_episode + 1) % 25 == 0:
+                    rate = rate / 25.0
+                    vis.plot("success_rate", rate)
+                    if rate >= max_rate:
+                        agent.save(f"D:/DRL_Diana_robot_arm/result/{rate}")
+                        max_rate = rate
+                        opt.her_ratio = opt.her_ratio * 0.75
+                    pbar.set_postfix({
+                        'episode': '%d' % (opt.num_episodes / 10 * i + i_episode + 1),
+                        'avg return': '%.3f' % np.mean(return_list[-25:]),
+                        'success rata': '%.2f' % rate
+                    })
+                    vis.plot("avg_return", np.mean(return_list[-25:]))
+                    rate = 0.0
+                pbar.update(1)
+
+
+def train_reach_with_DiffusionPolicy_CNN(**kwargs):
+    # 根据命令行参数更新配置
+    opt._parse(kwargs)
+
+    vis = Visualizer(opt.vis_name, port=opt.vis_port)
+    env = RLCamReachEnv(is_render=True, is_good_view=False)
+    env = CustomSkipFrame(env)
+    state_dim = (4, 84, 84)
+    action_dim = 3
+    action_bound = float(env.action_space.high[0]) + 0.3
+
+    random.seed(opt.random_seed)
+    np.random.seed(opt.random_seed)
+    torch.manual_seed(opt.random_seed)
+    
+    replay_buffer = ReplayBuffer_Trajectory_reach_CNN(opt.buffer_size)
+    agent = DiffusionPolicy_CNN(
+        state_dim=state_dim,
+        action_dim=action_dim,
+        action_bound=action_bound,
+        hidden_dim=opt.hidden_dim,
+        actor_lr=opt.diffusion_lr,
+        num_diffusion_steps=opt.num_diffusion_steps,
+        num_inference_steps=opt.num_inference_steps,
+        beta_schedule=opt.beta_schedule,
+        prediction_type=opt.prediction_type,
+        ema_decay=opt.ema_decay,
+        clip_sample=opt.clip_sample,
+        network_type="unet",  # CNN版本建议使用unet
+        horizon_steps=opt.horizon_steps,
+        action_horizon=opt.action_horizon,
+        device=opt.device
+    )
+
+    return_list = []
+    max_rate = 0
+    for i in range(100):
+        with tqdm(total=int(opt.num_episodes / 10), desc='Iteration %d' % i) as pbar:
+            rate = 0.0
+            for i_episode in range(int(opt.num_episodes / 10)):
+                episode_return = 0
+                state = env.reset()
+                traj = Trajectory(state)
+                done = False
+                while not done:
+                    action = agent.take_action(state)
+                    state, reward, done, is_success = env.step(action)
+                    if reward == 0:
+                        rate = rate + 1
+                    episode_return += reward
+                    state = list(state)
+                    traj.store_step(action, state, reward, done)
+                replay_buffer.add_trajectory(traj)
+                vis.plot("return", episode_return)
+                return_list.append(episode_return)
+                
+                if replay_buffer.size() >= opt.minimal_episodes:
+                    for _ in range(opt.n_train):
+                        transition_dict = replay_buffer.sample(opt.batch_size, use_her=False, her_ratio=opt.her_ratio)
+                        loss = agent.train(transition_dict)
+                        vis.plot("diffusion_loss", loss)
+                        
+                if (i_episode + 1) % 10 == 0:
+                    pbar.set_postfix({
+                        'episode':
+                            '%d' % (opt.num_episodes / 10 * i + i_episode + 1),
+                        'return':
+                            '%.3f' % np.mean(return_list[-10:])
+                    })
+                    vis.plot("avg_return", np.mean(return_list[-10:]))
+                    
+                if (i_episode + 1) % 25 == 0:
+                    rate = rate / 25.0
+                    vis.plot("success_rate", rate)
+                    if rate >= max_rate:
+                        agent.save(f"D:/DRL_Diana_robot_arm/result/{rate}")
+                        max_rate = rate
+                        opt.her_ratio = opt.her_ratio * 0.75
+                    rate = 0.0
+                pbar.update(1)
+
+
 def get_vis_data():
     """解析visdom得到的json文件"""
     key_list = []
@@ -629,16 +778,19 @@ def help(**kwargs):
     """
     print("""-------------------------------------------------------------------
     usage : python file.py <function> [--args=value]
-    <function> := train_reach_with_TD3 | train_reach_with_DDPG | train_reach_with_TD3_CNN | train_push_with_TD3 | train_pick_with_TD3 | get_vis_data | help 
-            [train_reach_with_TD3]        --- Start train model
-            [train_reach_with_DDPG]       --- Start test for random imgages
-            [train_reach_with_TD3_CNN]    --- Start test for total acc
-            [train_push_with_TD3]         --- Start test for write results to csv
-            [train_pick_with_TD3]         --- Start analysis for datasets
-            [get_vis_data]                --- Start make divide for datasets
+    <function> := train_reach_with_TD3 | train_reach_with_DDPG | train_reach_with_TD3_CNN | train_reach_with_DiffusionPolicy | train_reach_with_DiffusionPolicy_CNN | train_push_with_TD3 | train_pick_with_TD3 | get_vis_data | help 
+            [train_reach_with_TD3]                  --- Start train model with TD3
+            [train_reach_with_DDPG]                 --- Start train model with DDPG
+            [train_reach_with_TD3_CNN]              --- Start train model with TD3 (CNN)
+            [train_reach_with_DiffusionPolicy]      --- Start train model with Diffusion Policy (MLP)
+            [train_reach_with_DiffusionPolicy_CNN]  --- Start train model with Diffusion Policy (CNN)
+            [train_push_with_TD3]                   --- Start train push task with TD3
+            [train_pick_with_TD3]                   --- Start train pick task with TD3
+            [get_vis_data]                          --- Parse visdom json data
     example: 
-            python {0} train --env='TD3' --lr=0.01
-            python {0} testforacc --dataset='path/to/dataset/root/'
+            python {0} train_reach_with_DiffusionPolicy --num_diffusion_steps=100 --num_inference_steps=50 --diffusion_lr=0.0003 --horizon_steps=16 --action_horizon=8
+            python {0} train_reach_with_DiffusionPolicy_CNN --network_type=unet --prediction_type=epsilon --beta_schedule=squaredcos_cap_v2
+            python {0} train_reach_with_TD3 --env='RLReachEnv' --actor_lr=0.001
             python {0} help
     avaiable args:""".format(__file__))
     opt._parsehelp(kwargs)

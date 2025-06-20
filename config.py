@@ -1,28 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-'''
- ------------------------------------------------------------------
- @File Name:        config.py
- @Created:          2022/7/18 11:02
- @Software:         PyCharm
- 
- @Author:           HHH
- @Email:            1950049@tongji.edu.cn
- @Gitee:            https://gitee.com/jin-yiyang
- @Version:          v1.0
- 
- @Description:      Main Function:    
-                    
- @Function List:    exit() -- exit the interpreter by raising SystemExit
-                    getdlopenflags() -- returns flags to be used for dlopen() calls
-                    getprofile() -- get the global profiling function
- ------------------------------------------------------------------
- @Change History :                                                          
-  <Date>     | <Version> | <Author>       | <Description>                   
- ------------------------------------------------------------------
-  2022/7/18   | v1.0      | HHH            | Create file                     
- ------------------------------------------------------------------
-'''
+
 import warnings
 import torch as t
 
@@ -42,7 +19,7 @@ class DefaultConfig(object):
     reach_dis = 0.01     # to control the target distance
 
     # train parameter
-    use_gpu = True       # user GPU or not
+    use_gpu = False       # user GPU or not
     device = t.device('cuda') if use_gpu else t.device('cpu')
     random_seed = 0
     num_episodes = 500   # number of training episodes
@@ -77,6 +54,18 @@ class DefaultConfig(object):
 
     # HER algo only
     her_ratio = 0.8      # her rate per batch
+
+    # Diffusion Policy algo only
+    num_diffusion_steps = 100     # 训练时的扩散步数
+    num_inference_steps = 50      # 推理时的去噪步数 
+    beta_schedule = "squaredcos_cap_v2"  # 噪声调度器类型: "linear", "squaredcos_cap_v2"
+    prediction_type = "epsilon"   # 预测类型: "epsilon"(噪声) 或 "sample"(干净动作)
+    ema_decay = 0.995            # EMA衰减率
+    clip_sample = True           # 是否裁剪样本
+    network_type = "mlp"         # 网络类型: "mlp" 或 "unet"
+    horizon_steps = 16           # 预测时域长度
+    action_horizon = 8           # 实际执行动作数量
+    diffusion_lr = 3e-4          # Diffusion Policy学习率
 
     def _parse(self, kwargs):
         """

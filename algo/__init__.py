@@ -35,3 +35,7 @@ from .DATD3.DATD3_mlp import DATD3_MLP
 from .DATD3.DATD3_cnn import DATD3_CNN
 from .DQN.DQN_mlp import DQN_MLP
 from .DQN.DQN_cnn import DQN_CNN
+# diffusion policy
+# authors: reicholguk@proton.me
+from .DiffusionPolicy.diffusion_mlp import DiffusionPolicy_MLP
+from .DiffusionPolicy.diffusion_cnn import DiffusionPolicy_CNN

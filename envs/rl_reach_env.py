@@ -183,7 +183,7 @@ class RLReachEnv(gym.Env):
         ang = 3.14 * 0.5 + 3.1415925438 * random.random()
         orn = p.getQuaternionFromEuler([0, 0, ang])
         # 载入物体
-        self.object_id = p.loadURDF("../models/cube_small_target_push.urdf",
+        self.object_id = p.loadURDF("models/cube_small_target_push.urdf",
                                     basePosition=[xpos, ypos, zpos],
                                     baseOrientation=[orn[0], orn[1], orn[2], orn[3]],
                                     useFixedBase=1)
