@@ -1,59 +1,215 @@
-#      Robotic Arm Motion Planning Simulation Based on Reinforcement Learning
+# Diffusion Policy pybullet Usage Guide:
+Author Contact: reicholguk@proton.me
+## 🎯 Overview
 
- This is the repository of  Robotic Arm Motion Planning Simulation Based on Reinforcement Learning.
+Diffusion Policy is a powerful behavior cloning method that models action sequences using diffusion models. This implementation includes receding horizon optimization and supports both MLP and U-Net architectures.This directory contains the implementation of Diffusion Policy for robotic manipulation tasks.The basic envs for the robotarm on pybullet by reinforcement learning refers to https://github.com/Shimly-2/DRL-on-robot-arm.git.
 
-## Overview
 
-In this code, I use a self-built pybullet robot arm reinforcement learning environment to test some reinforcement learning algorithms, including `DDPG`, `TD3`, `DADDPG`, `DATD3`, and `DARC`, and try to let the robot arm finish three tasks: reach, push, and pick.
+### Key Features
+- **Receding Horizon Optimization**: Predicts action sequences and executes them step by step
+- **Flexible Network Architecture**: Supports both MLP and U-Net architectures  
+- **Multi-modal Inputs**: Supports both vector states and image observations
+- **HER Integration**: Compatible with Hindsight Experience Replay
+- **Detailed Logging**: Comprehensive denoising process visualization
 
-I use `main.py` to run results, the algorithms' parameters are in `config.py`, and use `visdom` to monitor the algorithms' performance. The `envs` deposits three self-built robot arm environments, the `algo` deposits test algorithms, the `models` deposits robot `urdf` file, and the `utils` deposits small tools for rl-learning.
+## 🚀 Quick Start
 
-## Requirements
-
-- python: 3.7.11
-- mujoco_py: 2.1.5
-- torch: 1.6.0+cu101
-- gym: 0.19.0
-- pybullet: 3.0.6
-- visdom: 0.1.8.9
-
-## Test algorithm
-
-- DDPG
-- TD3
-- DADDPG
-- DATD3
-- DARC( AAAI 2022, Efficient Continuous Control with Double Actors and Regularized Critics )
-
-## How to use
-
-### Start visdom
-
-```python
-python -m visdom.server
+### Vector State Input (MLP)
+```bash
+python main.py train_reach_with_DiffusionPolicy \
+    --num_diffusion_steps=100 \
+    --num_inference_steps=50 \
+    --diffusion_lr=0.0003 \
+    --horizon_steps=16 \
+    --action_horizon=8
 ```
 
- Run the following commands to  start visdom server.
-
-### Run simulation
-
-```python
-python main.py run --env=<envrionment name> --algo=<algorithm name> --vis_name=<visdom server name> 
+### Image Input (CNN)
+```bash
+python main.py train_reach_with_DiffusionPolicy_CNN \
+    --network_type=unet \
+    --prediction_type=epsilon \
+    --beta_schedule=squaredcos_cap_v2 \
+    --horizon_steps=16 \
+    --action_horizon=8
 ```
 
-I use `fire` console to run my code, so use the following commands to run the simulation, you also can change the config in `config.py` instead.
+## ⚙️ Parameter Configuration
 
-## Some results
+### Core Diffusion Parameters
 
-### Training process
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `num_diffusion_steps` | 100 | Number of forward diffusion steps (noise addition) |
+| `num_inference_steps` | 50 | Number of reverse inference steps (denoising) |
+| `diffusion_lr` | 0.0003 | Learning rate for diffusion model |
+| `beta_schedule` | "squaredcos_cap_v2" | Noise schedule: "linear" or "squaredcos_cap_v2" |
+| `prediction_type` | "epsilon" | Prediction target: "epsilon" (noise) or "sample" (clean action) |
+| `ema_decay` | 0.995 | Exponential moving average decay for model parameters |
 
-![1](pic/result1.gif)
+### Receding Horizon Optimization Parameters
 
-### Performance
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `horizon_steps` | 16 | Prediction horizon length, how many steps to predict at once |
+| `action_horizon` | 8 | Number of actions to actually execute, typically half of horizon_steps |
 
-![1](pic/result2.png)
+### Network Architecture Parameters
 
-### Online comparison
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `network_type` | "mlp" | Network type: "mlp" or "unet" |
+| `clip_sample` | True | Whether to clip predicted samples |
 
-![1](pic/result3.png)
+## Usage Examples
+
+### Example 1: Fast Inference Configuration
+```bash
+# Reduce inference steps for faster execution
+python main.py train_reach_with_DiffusionPolicy \
+    --num_diffusion_steps=50 \
+    --num_inference_steps=20 \
+    --horizon_steps=8 \
+    --action_horizon=4
+```
+
+### Example 2: High-Quality Configuration
+```bash
+# Increase steps for better quality
+python main.py train_reach_with_DiffusionPolicy \
+    --num_diffusion_steps=200 \
+    --num_inference_steps=100 \
+    --horizon_steps=32 \
+    --action_horizon=16
+```
+
+### Example 3: Image-based Task
+```bash
+# CNN version for camera observations
+python main.py train_reach_with_DiffusionPolicy_CNN \
+    --network_type=unet \
+    --num_diffusion_steps=100 \
+    --num_inference_steps=50 \
+    --diffusion_lr=0.0001
+```
+
+## 🔧 Advanced Features
+
+### 1. Receding Horizon Optimization
+- **Principle**: Predict action sequences of length `horizon_steps`, but only execute the first `action_horizon` actions
+- **Advantage**: Provides long-term planning while maintaining real-time execution
+- **Configuration**: Typically set `action_horizon = horizon_steps // 2`
+
+### 2. Multi-scale Network Architecture
+- **MLP**: Suitable for low-dimensional vector inputs, fast training
+- **U-Net**: Suitable for high-dimensional image inputs, better feature extraction
+
+### 3. Flexible Noise Schedules
+- **Linear**: Simple linear noise increase, suitable for quick experiments
+- **Cosine**: More gradual noise increase, typically yields better results
+
+### 4. Prediction Types
+- **Epsilon**: Predict noise, more stable training
+- **Sample**: Predict clean actions directly, more intuitive
+
+## 📊 Performance Monitoring
+
+The system automatically logs the following metrics:
+- `diffusion_loss`: Training loss
+- `avg_return`: Average episode return
+- `success_rate`: Task success rate
+- Detailed denoising process logs
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Memory Issues**
+   - Reduce `horizon_steps` and `action_horizon`
+   - Use smaller batch sizes
+
+2. **Training Instability**
+   - Try `prediction_type="epsilon"`
+   - Reduce learning rate
+   - Increase `ema_decay`
+
+3. **Slow Inference**
+   - Reduce `num_inference_steps`
+   - Use `network_type="mlp"` for simple tasks
+
+## 📈 Performance Optimization
+
+### Training Speed
+- Use MLP for vector inputs
+- Reduce diffusion steps during development
+- Use smaller horizons for simple tasks
+
+### Training Quality
+- Use U-Net for image inputs
+- Increase diffusion and inference steps
+- Use cosine noise schedule
+- Enable EMA for stable inference
+
+## 🎯 Best Practices
+
+1. **Parameter Selection**
+   - Start with default parameters
+   - Gradually adjust based on task complexity
+   - Monitor success rate and convergence
+
+2. **Network Choice**
+   - MLP: For vector states (positions, velocities)
+   - U-Net: For image observations
+
+3. **Horizon Setting**
+   - Longer horizons: Better for planning tasks
+   - Shorter horizons: Better for reactive tasks
+
+4. **Training Strategy**
+   - Use HER for sparse reward tasks
+   - Monitor both loss and success rate
+   - Save models with high success rates
+
+## 🎭 Demo Program
+
+Run demo program to see all features:
+
+```bash
+# Full demo
+python demo_diffusion.py
+
+# Only demo feature capabilities
+python demo_diffusion.py --demo features
+
+# Only demo training process
+python demo_diffusion.py --demo training
+```
+
+## 🐛 Common Questions
+
+### Q1: Action output unstable?
+**A**: Try increasing `num_inference_steps` or using larger `ema_decay`
+
+### Q2: Training slow to converge?
+**A**: Adjust learning rate `diffusion_lr`, or try "sample" prediction type
+
+### Q3: Memory issues?
+**A**: Reduce `batch_size`, `horizon_steps`, or `hidden_dim`
+
+### Q4: CNN version dimension error?
+**A**: Check input image dimensions, ensure (C, H, W) format
+
+## 📈 Experiment Suggestions
+
+1. **Start with quick configuration and validate**
+2. **Gradually increase complexity**
+3. **Compare different noise schedules**
+4. **Adjust horizon parameters to observe effects**
+5. **Monitor training loss and success rate**
+
+## 🔗 Related Resources
+
+- [Diffusion Policy Paper](https://arxiv.org/abs/2303.04137)
+- [Original Implementation](https://github.com/columbia-ai-robotics/diffusion_policy)
+
 
